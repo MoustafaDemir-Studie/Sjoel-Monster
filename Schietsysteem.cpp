@@ -1,127 +1,63 @@
-# include <LiquidCrystal_I2C.h>
-# include <Wire.h>
-# include <Servo.h>
+// DJI 420 Lite ESC – 400 Hz PWM
+// Pins: D9 (OC1A) & D10 (OC1B)
 
-
-// PINS VARIABLES
-const int knopPins[] = {2, 3, 4, 5, 6};
-const int schietKnop = 7;
-const int servoKnop = 11;
 const int potPin = A0;
 
-// VARIABLES
-const int maxSchijven = 15;
-int aantalSchijven = maxSchijven;
-int huidigeStand = 0;
-
-// SERVO VARIABLE
-const int SERVO_HOME = 0;
-const int SERVO_FIRE = 180;
-
-const int dodeZone = 50;
-const int escMin = 1000;
+const int escMin = 1000; // µs
 const int escMax = 2000;
 
-int servoPos = 0;
-
-
-
-
-Servo ServoModule;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-
-
+const int deadZone = 50;
 
 void setup() {
-  Serial.begin(9600);
-  lcd.init();
-  lcd.backlight();
-  updateLCD(false);
+  pinMode(9, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(potPin, INPUT);
 
+  // -------- TIMER1 SETUP --------
+  TCCR1A = 0;
+  TCCR1B = 0;
 
-  ServoModule.attach(servoKnop);
-  ServoModule.write(SERVO_HOME);
-
-  ServoModule.writeMicroseconds(escMin);
+  // Fast PWM, TOP = ICR1 (mode 14)
   
-  for(int i=0; i<5; i++) {
-    pinMode(knopPins[i], INPUT_PULLUP);
-  }
-  pinMode(schietKnop, INPUT_PULLUP);
+  TCCR1A |= (1 << COM1A1) | (1 << COM1B1);
+  TCCR1A |= (1 << WGM11);
+  TCCR1B |= (1 << WGM12) | (1 << WGM13);
 
+  // Prescaler = 8 → 2 MHz timer
+  TCCR1B |= (1 << CS11);
+
+  // 2 MHz / 400 Hz = 5000 ticks → 2.5 ms
+  ICR1 = 5000;
+
+  // Start at minimum throttle
+  OCR1A = escMin * 2;
+  OCR1B = escMin * 2;
+
+  delay(6000); // ESC arming time
 }
 
 void loop() {
-  schietSnelheidAanpassen();
-  for (int i = 0; i < 5; i++) {
-    if (digitalRead(knopPins[i]) == LOW) {
-      huidigeStand = i + 1;
-      updateLCD(false);
-      delay(200); // Knoppen debouncen.
-    }
-  }
+  // langzaam op naar 1200 µs
 
-  if (digitalRead(schietKnop) == LOW) {
-      schiet();
-  }
-
-  
-}
-
-void schiet() {
-  if (aantalSchijven > 0) {
-    ServoModule.write(SERVO_FIRE);
-    delay(500);
-    ServoModule.write(SERVO_HOME);
-    delay(300);
-
-    aantalSchijven--;
-
-    if (aantalSchijven == 0) {
-            resetSysteem();
-    }
-  }
-
-  updateLCD(false);
-  delay(200); // debounce
-}
-
-void schietSnelheidAanpassen() {
   int potWaarde = analogRead(potPin);
-  int snelheid;
+  int pulse = map(potWaarde, 0,1023, 1000, 2000); 
+
+
+  OCR1A = pulse * 2;
+  OCR1B = pulse * 2;
   
-  if (potWaarde < dodeZone) {
-    snelheid = escMin; 
-  }
-  else {
-    snelheid = map(potWaarde, 0, 1023, escMin, escMax);
-  }
-  ServoModule.writeMicroseconds(snelheid);
-  delay(10);
-}
+  /*
+    OCR1A = 1200 * 2;
+  OCR1B = 1200 * 2;
+  delay(3000);
 
+  OCR1A = 1400 * 2;
+  OCR1B = 1400 * 2;
+  delay(3000);
 
-void resetSysteem() {
-  aantalSchijven = maxSchijven;
-  huidigeStand = 0;
-  ServoModule.write(SERVO_HOME);
-  updateLCD(true);
-}
+  OCR1A = 1000 * 2;
+  OCR1B = 1000 * 2;
+  delay(5000);
+  */
 
-void updateLCD(bool reset) {
-  lcd.clear();
-
-  if (!reset) {
-    lcd.setCursor(0, 1);
-    lcd.print("Magazijn leeg, Herladen!");
-    Serial.println("Magazijn leeg, reset!");
-
-  }
-  lcd.setCursor(0, 0);
-  lcd.print("Schietstand: ");
-  lcd.print(huidigeStand);
-
-  lcd.setCursor(0, 1);
-  lcd.print("Schijven: ");
-  lcd.print(aantalSchijven);
 }
